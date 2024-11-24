@@ -1,0 +1,43 @@
+From 586cb1b876ec26a7d769865125480b1e199ae0e7 Mon Sep 17 00:00:00 2001
+From: Tomas Hozza <thozza@redhat.com>
+Date: Tue, 20 Nov 2012 14:21:27 +0100
+Subject: [PATCH] Coverity scan errors fixes
+
+---
+ src/http.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/http.c b/src/http.c
+index 227af3f..b8900c1 100644
+--- a/src/http.c
++++ b/src/http.c
+@@ -1750,6 +1750,8 @@ gethttp (struct url *u, struct http_stat *hs, int *dt, struct url *proxy,
+                                          _("Malformed status line")));
+               xfree (head);
+               request_free (req);
++              if (message)
++                xfree_null(message);
+               return HERR;
+             }
+ 
+@@ -1852,6 +1854,8 @@ gethttp (struct url *u, struct http_stat *hs, int *dt, struct url *proxy,
+       resp_free (resp);
+       request_free (req);
+       xfree (head);
++      if (message)
++        xfree_null(message);
+       return HERR;
+     }
+ 
+@@ -2037,6 +2041,8 @@ File %s already there; not retrieving.\n\n"), quote (hs->local_file));
+           if (has_html_suffix_p (hs->local_file))
+             *dt |= TEXTHTML;
+ 
++          request_free(req);
++          resp_free(resp);
+           xfree (head);
+           xfree_null (message);
+           return RETRUNNEEDED;
+-- 
+1.7.11.7
+

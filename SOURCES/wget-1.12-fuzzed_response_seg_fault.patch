@@ -1,0 +1,43 @@
+diff -up wget-1.12/src/http.c.fuzzed wget-1.12/src/http.c
+--- wget-1.12/src/http.c.fuzzed	2012-10-01 10:19:59.112687170 +0200
++++ wget-1.12/src/http.c	2012-10-01 10:26:17.621136356 +0200
+@@ -1741,6 +1741,18 @@ gethttp (struct url *u, struct http_stat
+ 
+           resp = resp_new (head);
+           statcode = resp_status (resp, &message);
++          if (statcode < 0)
++            {
++              char *tms = datetime_str (time (NULL));
++              logprintf (LOG_VERBOSE, "%d\n", statcode);
++              logprintf (LOG_NOTQUIET, _("%s ERROR %d: %s.\n"), tms, statcode,
++                         quotearg_style (escape_quoting_style,
++                                         _("Malformed status line")));
++              xfree (head);
++              request_free (req);
++              return HERR;
++            }
++
+           hs->message = xstrdup (message);
+           resp_free (resp);
+           xfree (head);
+@@ -1829,6 +1841,20 @@ gethttp (struct url *u, struct http_stat
+   /* Check for status line.  */
+   message = NULL;
+   statcode = resp_status (resp, &message);
++  if (statcode < 0)
++    {
++      char *tms = datetime_str (time (NULL));
++      logprintf (LOG_VERBOSE, "%d\n", statcode);
++      logprintf (LOG_NOTQUIET, _("%s ERROR %d: %s.\n"), tms, statcode,
++                 quotearg_style (escape_quoting_style,
++                                 _("Malformed status line")));
++      CLOSE_INVALIDATE (sock);
++      resp_free (resp);
++      request_free (req);
++      xfree (head);
++      return HERR;
++    }
++
+   hs->message = xstrdup (message);
+   if (!opt.server_response)
+     logprintf (LOG_VERBOSE, "%2d %s\n", statcode,

@@ -1,0 +1,170 @@
+From 31dbed0a5b0deb84c75aada401c40ee22e7b464a Mon Sep 17 00:00:00 2001
+From: Tomas Hozza <thozza@redhat.com>
+Date: Tue, 20 Nov 2012 12:29:54 +0100
+Subject: [PATCH] Introduce --trust-server-names option
+
+---
+ NEWS          |  3 +++
+ doc/wget.texi | 11 +++++++++++
+ src/http.c    |  9 +++++----
+ src/http.h    |  4 ++--
+ src/init.c    |  1 +
+ src/main.c    |  3 +++
+ src/options.h |  1 +
+ src/retr.c    |  3 ++-
+ 8 files changed, 28 insertions(+), 7 deletions(-)
+
+diff --git a/NEWS b/NEWS
+index 8c6840c..6b0b683 100644
+--- a/NEWS
++++ b/NEWS
+@@ -6,6 +6,9 @@ See the end for copying conditions.
+ 
+ Please send GNU Wget bug reports to <bug-wget@gnu.org>.
+ 
++** By default, on server redirects, use the original URL to get the
++   local file name. Close CVE-2010-2252.
++
+ * Changes in Wget 1.12
+ 
+ ** Mailing list MOVED to bug-wget@gnu.org
+diff --git a/doc/wget.texi b/doc/wget.texi
+index 13c1d66..8155c85 100644
+--- a/doc/wget.texi
++++ b/doc/wget.texi
+@@ -1487,6 +1487,13 @@ This option is useful for some file-downloading CGI programs that use
+ @code{Content-Disposition} headers to describe what the name of a
+ downloaded file should be.
+ 
++@cindex Trust server names
++@item --trust-server-names
++
++If this is set to on, on a redirect the last component of the
++redirection URL will be used as the local file name.  By default
++the last component in the original URL is used.
++
+ @cindex authentication
+ @item --auth-no-challenge
+ 
+@@ -2799,6 +2806,10 @@ Set the connect timeout---the same as @samp{--connect-timeout}.
+ Turn on recognition of the (non-standard) @samp{Content-Disposition}
+ HTTP header---if set to @samp{on}, the same as @samp{--content-disposition}.
+ 
++@item trust_server_names = on/off
++If set to on, use the last component of a redirection URL for the local
++file name.
++
+ @item continue = on/off
+ If set to on, force continuation of preexistent partially retrieved
+ files.  See @samp{-c} before setting it.
+diff --git a/src/http.c b/src/http.c
+index 227af3f..2c53c9f 100644
+--- a/src/http.c
++++ b/src/http.c
+@@ -2436,8 +2436,9 @@ File %s already there; not retrieving.\n\n"), quote (hs->local_file));
+ /* The genuine HTTP loop!  This is the part where the retrieval is
+    retried, and retried, and retried, and...  */
+ uerr_t
+-http_loop (struct url *u, char **newloc, char **local_file, const char *referer,
+-           int *dt, struct url *proxy, struct iri *iri)
++http_loop (struct url *u, struct url *original_url, char **newloc,
++           char **local_file, const char *referer, int *dt, struct url *proxy,
++           struct iri *iri)
+ {
+   int count;
+   bool got_head = false;         /* used for time-stamping and filename detection */
+@@ -2483,7 +2484,7 @@ http_loop (struct url *u, char **newloc, char **local_file, const char *referer,
+     }
+   else if (!opt.content_disposition)
+     {
+-      hstat.local_file = url_file_name (u);
++      hstat.local_file = url_file_name (opt.trustservernames ? u : original_url);
+       got_name = true;
+     }
+ 
+@@ -2523,7 +2524,7 @@ File %s already there; not retrieving.\n\n"),
+ 
+   /* Send preliminary HEAD request if -N is given and we have an existing
+    * destination file. */
+-  file_name = url_file_name (u);
++  file_name = url_file_name (opt.trustservernames ? u : original_url);
+   if (opt.timestamping
+       && !opt.content_disposition
+       && file_exists_p (file_name))
+diff --git a/src/http.h b/src/http.h
+index 894091e..ca49dff 100644
+--- a/src/http.h
++++ b/src/http.h
+@@ -33,8 +33,8 @@ as that of the covered work.  */
+ 
+ struct url;
+ 
+-uerr_t http_loop (struct url *, char **, char **, const char *, int *,
+-		  struct url *, struct iri *);
++uerr_t http_loop (struct url *, struct url *, char **, char **, const char *,
++                  int *, struct url *, struct iri *);
+ void save_cookies (void);
+ void http_cleanup (void);
+ time_t http_atotm (const char *);
+diff --git a/src/init.c b/src/init.c
+index 5a05d03..f48d686 100644
+--- a/src/init.c
++++ b/src/init.c
+@@ -243,6 +243,7 @@ static const struct {
+   { "timeout",          NULL,                   cmd_spec_timeout },
+   { "timestamping",     &opt.timestamping,      cmd_boolean },
+   { "tries",            &opt.ntry,              cmd_number_inf },
++  { "trustservernames", &opt.trustservernames,  cmd_boolean },
+   { "useproxy",         &opt.use_proxy,         cmd_boolean },
+   { "user",             &opt.user,              cmd_string },
+   { "useragent",        NULL,                   cmd_spec_useragent },
+diff --git a/src/main.c b/src/main.c
+index dddc4b2..fa62911 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -266,6 +266,7 @@ static struct cmdline_option option_data[] =
+     { "timeout", 'T', OPT_VALUE, "timeout", -1 },
+     { "timestamping", 'N', OPT_BOOLEAN, "timestamping", -1 },
+     { "tries", 't', OPT_VALUE, "tries", -1 },
++    { "trust-server-names", 0, OPT_BOOLEAN, "trustservernames", -1 },
+     { "user", 0, OPT_VALUE, "user", -1 },
+     { "user-agent", 'U', OPT_VALUE, "useragent", -1 },
+     { "verbose", 'v', OPT_BOOLEAN, "verbose", -1 },
+@@ -675,6 +676,8 @@ Recursive accept/reject:\n"),
+     N_("\
+   -I,  --include-directories=LIST  list of allowed directories.\n"),
+     N_("\
++  --trust-server-names  use the name specified by the redirection url last component.\n"),
++    N_("\
+   -X,  --exclude-directories=LIST  list of excluded directories.\n"),
+     N_("\
+   -np, --no-parent                 don't ascend to the parent directory.\n"),
+diff --git a/src/options.h b/src/options.h
+index a895863..4a561c3 100644
+--- a/src/options.h
++++ b/src/options.h
+@@ -242,6 +242,7 @@ struct options
+   char *encoding_remote;
+   char *locale;
+ 
++  bool trustservernames;
+ #ifdef __VMS
+   int ftp_stmlf;                /* Force Stream_LF format for binary FTP. */
+ #endif /* def __VMS */
+diff --git a/src/retr.c b/src/retr.c
+index edc4829..e6fc317 100644
+--- a/src/retr.c
++++ b/src/retr.c
+@@ -689,7 +689,8 @@ retrieve_url (struct url * orig_parsed, const char *origurl, char **file,
+ #endif
+       || (proxy_url && proxy_url->scheme == SCHEME_HTTP))
+     {
+-      result = http_loop (u, &mynewloc, &local_file, refurl, dt, proxy_url, iri);
++      result = http_loop (u, orig_parsed, &mynewloc, &local_file, refurl, dt,
++                          proxy_url, iri);
+     }
+   else if (u->scheme == SCHEME_FTP)
+     {
+-- 
+1.7.11.7
+
